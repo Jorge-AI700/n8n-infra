@@ -1,0 +1,12 @@
+# secrets — never commit
+.env
+*.env
+!*.env.example
+
+# data / backups / runtime
+backups/
+data/
+files/
+ffmpeg
+ffprobe
+n8n_data/

@@ -1,0 +1,5 @@
+https://10.8.0.1:5678 {
+	bind 10.8.0.1
+	tls internal
+	reverse_proxy 127.0.0.1:5679
+}

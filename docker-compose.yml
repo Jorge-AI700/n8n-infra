@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: n8n_main
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U n8n']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:2.34.6
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5678:5678'
+      - '127.0.0.1:5679:5678'
+      - '10.8.0.1:5679:5678'
+    env_file: .env
+    environment:
+      # ── Database ──
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n_main
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: public
+
+      # ── Queue (Redis) ──
+      EXECUTIONS_MODE: regular
+      # QUEUE_BULL_REDIS_HOST: redis      # no longer needed in regular mode
+      # QUEUE_BULL_REDIS_PORT: 6379
+      # QUEUE_BULL_REDIS_DB: 0
+
+      # ── General ──
+      N8N_HOST: n8n.wizdom-ai.com
+      N8N_PROTOCOL: https
+      N8N_PORT: 5678
+      N8N_PROXY_HOPS: '1'
+      WEBHOOK_URL: https://n8n.wizdom-ai.com
+      N8N_EDITOR_BASE_URL: https://n8n.wizdom-ai.com
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+
+      # ── Task Runners (external Python runner) ──
+      N8N_RUNNERS_MODE: external
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+      N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+      N8N_NATIVE_PYTHON_RUNNER: "true"
+
+      # ── MCP Server Auth ──
+      N8N_MCP_SERVER_AUTH_TOKEN: ${MCP_N8N_MCP_API_KEY}
+
+      # ── Security ──
+      N8N_DISABLE_PRODUCTION_MAIN_PROCESS: 'false'
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: 'false'
+      NODES_EXCLUDE: '[]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./files:/files
+      - ./ffmpeg:/usr/local/bin/ffmpeg:ro
+      - ./ffprobe:/usr/local/bin/ffprobe:ro
+
+  task-runners:
+    image: n8n-runners-custom:2.30.5
+    restart: unless-stopped
+    environment:
+      - N8N_RUNNERS_TASK_BROKER_URI=http://n8n:5679
+      - N8N_RUNNERS_AUTH_TOKEN=n8n-runner-secret-token
+      - N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT=15
+    depends_on:
+      n8n:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:
+  n8n_files:
